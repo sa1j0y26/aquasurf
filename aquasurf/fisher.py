@@ -91,38 +91,31 @@ class FIM:
     def _create_multi_output_model(self, model):
         """
         Expose the relevant layers of the model as outputs, and keep track of input/output pairs.
+        This version avoids using deprecated `.ref()` methods incompatible with KerasTensor.
         """
-        output_refs = []
-        input_output_refs = []
-        for layer in model.layers:
-            # this layer has weights, so we need its input and output
-            if isinstance(layer, self.layers_with_weights):
-                layer_input_ref = layer.input.ref()
-                layer_output_ref = layer.output.ref()
-                input_output_refs.append((layer, layer_input_ref, layer_output_ref))
-                # keep track of the references for the outputs we need
-                if layer_input_ref not in output_refs:
-                    output_refs.append(layer_input_ref)
-                if layer_output_ref not in output_refs:
-                    output_refs.append(layer_output_ref)
-
-        # preserve the original model outputs
-        for output in model.outputs:
-            if output.ref() not in output_refs:
-                output_refs.append(output.ref())
-
-        # dereference to get the actual outputs
-        outputs = [output_ref.deref() for output_ref in output_refs]
-        model = tf.keras.Model(inputs=model.inputs, outputs=outputs)
-
-        # convert input/output references to indices
+        output_tensors = []
         input_output_pairs = []
-        for layer, input_ref, output_ref in input_output_refs:
-            input_idx = output_refs.index(input_ref)
-            output_idx = output_refs.index(output_ref)
-            input_output_pairs.append((layer, input_idx, output_idx))
-
-        return model, input_output_pairs
+    
+        for layer in model.layers:
+            if isinstance(layer, self.layers_with_weights):
+                layer_input = layer.input
+                layer_output = layer.output
+    
+                input_output_pairs.append((layer, layer_input, layer_output))
+    
+                if layer_input not in output_tensors:
+                    output_tensors.append(layer_input)
+                if layer_output not in output_tensors:
+                    output_tensors.append(layer_output)
+    
+        # add final outputs if not already in the list
+        for output in model.outputs:
+            if output not in output_tensors:
+                output_tensors.append(output)
+    
+        new_model = tf.keras.Model(inputs=model.inputs, outputs=output_tensors)
+    
+        return new_model, input_output_pairs
 
 
     def _expand_tensor(self, inpt, kernel_size, stride, padding, use_bias, is_dw_conv):
